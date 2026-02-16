@@ -1,4 +1,6 @@
 # guest-checkin-google-sheet
+
+## Overview of the app
 Quick and dirty guest check in application based on the App Script of Google Sheet. Should be good enough for 200~300 guest.
 
 We built it for our BUETian Alumni Association Calgary's yearly BUET Night event where we have to check in 300~400 guests (including family members).
@@ -9,3 +11,8 @@ Every time you search with a name, it looks for a partial match. If there are mu
 The number of check in guest you provide, adds to the total checked in guests for that party (this is particularly helpful when the mom has arrived with the kid but the dad is still parking and will check in few minutes later).
 
 Note that, there is no validation of the guests here because we know the persons and we just want to count how many people (and who) have arrived so far so that we can share this number with the event organizer/restaurant for their billing. 
+
+## How to use the code
+Go to the Google Sheet where you have the registration/check in data.
+From the menu, go to Extensions -> App Script. Then add the code (code.gs and index.html). Save, run, deploy.
+
