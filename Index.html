@@ -1,0 +1,322 @@
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root{
+        --w: 56vw;          /* compact console width on phones */
+        --w-max: 360px;     /* don’t get too wide */
+        --pad: 10px;
+        --gap: 8px;
+        --radius: 12px;
+        --border: #e6e6e6;
+        --bg: #fff;
+        --muted: #666;
+      }
+
+      * { box-sizing: border-box; }
+      html { font-size: 18px; }
+      body {
+        margin: 0;
+        padding: 10px;
+        background: #fafafa;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        -webkit-text-size-adjust: 100%;
+      }
+
+      /* Left-aligned “console” */
+      .container { margin: 0; }
+      .console { width: min(var(--w), var(--w-max)); }
+
+      h2 {
+        margin: 2px 0 8px;
+        font-size: 20px;
+        line-height: 1.1;
+      }
+
+      .stack { display: flex; flex-direction: column; gap: var(--gap); }
+
+      input, select, button {
+        width: 100%;
+        font-size: 18px;   /* readable; also prevents iOS zoom */
+        line-height: 1.1;
+        padding: 12px 12px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--bg);
+        margin: 0;         /* gap handles spacing */
+      }
+
+      input:focus, select:focus, button:focus {
+        outline: 3px solid rgba(0,120,255,.25);
+        outline-offset: 1px;
+      }
+
+      /* Faster tapping */
+      button {
+        border: 0;
+        font-weight: 700;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button.primary { background: #111; color: #fff; }
+      button.secondary { background: #f1f1f1; color: #111; border: 1px solid var(--border); }
+
+      /* Always side-by-side buttons in compact mode */
+      .btnRow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: var(--pad);
+        background: var(--bg);
+      }
+
+      .row { margin: 6px 0; }
+      .muted { color: var(--muted); font-size: 14px; }
+      .ok { color: #0a7; font-weight: 700; }
+      .err { color: #c33; font-weight: 700; }
+
+      /* Compact status block */
+      .status {
+        border: 1px dashed var(--border);
+        border-radius: var(--radius);
+        padding: 8px 10px;
+        background: #fcfcfc;
+      }
+
+      /* Ultra-small phones */
+      @media (max-width: 360px) {
+        :root { --w: 64vw; }
+        html { font-size: 17px; }
+        input, select, button { padding: 11px; }
+      }
+
+      /* If you ever use it on tablet/desktop, keep it compact but reasonable */
+      @media (min-width: 768px) {
+        :root { --w: 320px; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="console stack">
+        <h2>Guest Check-in</h2>
+
+        <input id="q" placeholder="Search by name" autocomplete="off" />
+
+        <div class="btnRow">
+          <button class="primary" onclick="findGuests()">Search</button>
+          <button class="secondary" onclick="clearUI()">Clear</button>
+        </div>
+
+        <div id="result" class="card" style="display:none;"></div>
+      </div>
+    </div>
+
+    <script>
+      let currentRow = null;
+      let cachedMatches = [];
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const q = document.getElementById("q");
+        q.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") findGuests();
+        });
+        q.focus(); // speed entry
+      });
+
+      function showCard(html, cls) {
+        const el = document.getElementById("result");
+        el.style.display = "block";
+        el.innerHTML = `<div class="${cls || ''}">${html}</div>`;
+      }
+
+      function clearUI() {
+        currentRow = null;
+        cachedMatches = [];
+        document.getElementById("q").value = "";
+        const el = document.getElementById("result");
+        el.style.display = "none";
+        el.innerHTML = "";
+        document.getElementById("q").focus(); // back to entry
+      }
+
+      function safeNum(x, fallback = 0) {
+        const n = Number(x);
+        return Number.isFinite(n) ? n : fallback;
+      }
+
+      function findGuests() {
+        const q = (document.getElementById("q").value || "").trim();
+        currentRow = null;
+        cachedMatches = [];
+
+        if (!q) {
+          showCard(`<div class="status err">Type a name to search.</div>`);
+          return;
+        }
+
+        showCard(`<div class="status muted">Searching…</div>`);
+
+        google.script.run
+          .withSuccessHandler(res => {
+            try {
+              const raw = "";
+
+              if (!res || res.found !== true) {
+                const msg = res && res.message ? res.message : "No match found.";
+                showCard(`<div class="status err">${escapeHtml(msg)}</div>${raw}`);
+                return;
+              }
+
+              if (res.single === true && res.match) {
+                renderGuest(res.match, raw);
+                return;
+              }
+
+              const matches = Array.isArray(res.matches) ? res.matches.filter(Boolean) : [];
+              if (matches.length === 0) {
+                showCard(`<div class="status err">No match found.</div>${raw}`);
+                return;
+              }
+
+              cachedMatches = matches;
+
+              const options = cachedMatches.map((m, idx) => {
+                const name = (m && m.name != null) ? String(m.name) : "(no name)";
+                const reg = safeNum(m && m.registered);
+                const cin = safeNum(m && m.checkedIn);
+                const label = `${name} (R:${reg} | I:${cin})`; // compact labels
+                return `<option value="${idx}">${escapeHtml(label)}</option>`;
+              }).join("");
+
+              showCard(`
+                <div class="row"><b>Multiple matches</b></div>
+                <select id="pick" onchange="pickGuest()">
+                  <option value="" selected disabled>Choose…</option>
+                  ${options}
+                </select>
+                ${raw}
+              `);
+
+              // Focus select for fast picking
+              const sel = document.getElementById("pick");
+              if (sel) sel.focus();
+
+            } catch (e) {
+              showCard(`<div class="status err">Client error: ${escapeHtml(e.message || String(e))}</div>`);
+            }
+          })
+          .withFailureHandler(err => {
+            const msg = err && err.message ? err.message : String(err);
+            showCard(`<div class="status err">Server call failed: ${escapeHtml(msg)}</div>`);
+          })
+          .apiFindGuestsByName(q);
+      }
+
+      function pickGuest() {
+        try {
+          const sel = document.getElementById("pick");
+          if (!sel) {
+            showCard(`<div class="status err">Picker not found on page.</div>`);
+            return;
+          }
+
+          const idxStr = sel.value;
+          if (idxStr === "" || idxStr == null) return;
+
+          const idx = Number(idxStr);
+          if (!Number.isFinite(idx) || idx < 0 || idx >= cachedMatches.length) {
+            showCard(`<div class="status err">Invalid selection.</div>`);
+            return;
+          }
+
+          const guest = cachedMatches[idx];
+          if (!guest) {
+            showCard(`<div class="status err">Selected guest is empty.</div>`);
+            return;
+          }
+
+          renderGuest(guest);
+        } catch (e) {
+          showCard(`<div class="status err">Client error: ${escapeHtml(e.message || String(e))}</div>`);
+        }
+      }
+
+      function renderGuest(g, debugBlock = "") {
+        const name = (g && g.name != null) ? String(g.name) : "(no name)";
+        const rowNumber = safeNum(g && g.rowNumber, NaN);
+
+        if (!Number.isFinite(rowNumber) || rowNumber < 2) {
+          showCard(`<div class="status err">Invalid rowNumber in record.</div>${debugBlock}`);
+          return;
+        }
+
+        currentRow = rowNumber;
+
+        const reg = safeNum(g && g.registered);
+        const cin = safeNum(g && g.checkedIn);
+
+        showCard(`
+          <div class="row"><b>${escapeHtml(name)}</b></div>
+          <div class="row muted">Registered: <b>${reg}</b> • Checked In: <b>${cin}</b></div>
+
+          <div class="row muted" style="margin-top:8px;">New check-in:</div>
+          <input id="checkIn" type="number" min="0" inputmode="numeric" />
+
+          <div class="btnRow" style="margin-top:6px;">
+            <button class="primary" onclick="saveCheckIn()">Save</button>
+            <button class="secondary" onclick="clearUI()">Next</button>
+          </div>
+          ${debugBlock}
+        `);
+
+        const inp = document.getElementById("checkIn");
+        if (inp) inp.focus();
+      }
+
+      function saveCheckIn() {
+        if (!Number.isFinite(currentRow) || currentRow < 2) {
+          showCard(`<div class="status err">Search and select a guest first.</div>`);
+          return;
+        }
+
+        const v = document.getElementById("checkIn") ? document.getElementById("checkIn").value : "";
+        const n = Number(v);
+
+        if (!Number.isFinite(n) || n < 0) {
+          showCard(`<div class="status err">Enter a valid non-negative number.</div>`);
+          return;
+        }
+
+        showCard(`<div class="status muted">Saving…</div>`);
+
+        google.script.run
+          .withSuccessHandler(res => {
+            if (!res || res.ok !== true) {
+              const msg = res && res.message ? res.message : "Failed to update.";
+              showCard(`<div class="status err">${escapeHtml(msg)}</div>`);
+              return;
+            }
+            showCard(`<div class="status ok">✅ ${escapeHtml(res.message || "Updated.")}</div>`);
+            // Fast flow: after save, put cursor back to search
+            setTimeout(() => clearUI(), 3000);
+          })
+          .withFailureHandler(err => {
+            const msg = err && err.message ? err.message : String(err);
+            showCard(`<div class="status err">Server call failed: ${escapeHtml(msg)}</div>`);
+          })
+          .apiSetCheckIn(currentRow, n);
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        }[c]));
+      }
+    </script>
+  </body>
+</html>
